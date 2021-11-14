@@ -7,6 +7,7 @@ import ru.nsu.fit.lab4snakepeachblacky.model.Constants;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.function.Function;
 
 public class Grid {
     public static final Color GRID_COLOR = new Color(38.0/256, 81.0/256, 39.0/256, 1);
@@ -21,7 +22,7 @@ public class Grid {
     private final List<Snake> snakes;
 
     @NonNull
-    private final Apple apple;
+    private final List<Apple> apples;
 
     public int getColumns() {
         return columns;
@@ -31,8 +32,8 @@ public class Grid {
         return rows;
     }
 
-    public Apple getApple() {
-        return apple;
+    public List<Apple> getApples() {
+        return apples;
     }
 
     public List<Snake> getSnakes() {
@@ -48,7 +49,8 @@ public class Grid {
         snakes.add(new Snake(this, new Cell(rows / 2, columns / 2)));
 
         // put the food at a random location
-        apple = new Apple(getRandomPoint());
+        apples = new ArrayList<>();
+        apples.add(new Apple(getRandomPoint()));
     }
 
     public Cell wrap(Cell point) {
@@ -71,12 +73,22 @@ public class Grid {
     }
 
     public void update() {
-        if (apple.getLocation().equals(snakes.get(0).getHead())) {
-            snakes.get(0).extend();
-            apple.setLocation(getRandomPoint());
-        } else {
-            snakes.get(0).move();
-        }
+        apples.forEach(apple -> {
+            snakes.forEach(snake -> {
+                if(apple.getLocation().equals(snake.getHead())) {
+                    snake.extend();
+                    apple.setLocation(getRandomPoint());
+                } else {
+                    snake.move();
+                }
+            });
+        });
+//        if (apples.get(0).getLocation().equals(snakes.get(0).getHead())) {
+//            snakes.get(0).extend();
+//            apples.get(0).setLocation(getRandomPoint());
+//        } else {
+//            snakes.forEach(Snake::move);
+//        }
     }
 
     public double getWidth() {

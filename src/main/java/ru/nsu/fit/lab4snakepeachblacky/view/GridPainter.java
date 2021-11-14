@@ -20,7 +20,7 @@ public class GridPainter {
         gc.fillRect(0, 0, grid.getWidth(), grid.getHeight());
         gc.setFill(Color.BLACK);
 
-        paintApple(grid, gc);
+        paintApples(grid, gc);
         paintSnake(grid, gc);
 
         // The score
@@ -28,19 +28,24 @@ public class GridPainter {
         gc.fillText("Score : " + 100 * grid.getSnakes().get(0).getCells().size(), 10, 490);
     }
 
-    private static void paintApple(Grid grid, GraphicsContext gc) {
+    private static void paintApples(Grid grid, GraphicsContext gc) {
         gc.setFill(Apple.COLOR);
-        paintPoint(grid.getApple().getLocation(), gc);
+        grid.getApples().forEach(apple -> {
+           paintPoint(apple.getLocation(), gc);
+        });
+//        paintPoint(grid.getApple().getLocation(), gc);
     }
 
     private static void paintSnake(Grid grid, GraphicsContext gc) {
-        Snake snake = grid.getSnakes().get(0);
-        gc.setFill(Snake.COLOR);
-        snake.getCells().forEach(point -> paintPoint(point, gc));
-        if (!snake.isAlive()) {
-            gc.setFill(Snake.DEAD_CELL);
-            paintPoint(snake.getHead(), gc);
-        }
+//        Snake snake = grid.getSnakes().get(0);
+        grid.getSnakes().forEach(snake -> {
+            gc.setFill(Snake.COLOR);
+            snake.getCells().forEach(point -> paintPoint(point, gc));
+            if (!snake.isAlive()) {
+                gc.setFill(Snake.DEAD_CELL);
+                paintPoint(snake.getHead(), gc);
+            }
+        });
     }
 
     private static void paintPoint(Cell cell, GraphicsContext gc) {

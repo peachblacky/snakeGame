@@ -1,26 +1,45 @@
 package ru.nsu.fit.lab4snakepeachblacky.model.info;
 
+import ru.nsu.fit.lab4snakepeachblacky.model.GameConfig;
+
 public class InformationTable {
-    private final Rating rating;
-    private final GameInfo gameInfo;
-    private final AvailableGames availableGames;
+    private Rating rating;
+    private GameConfig gameConfig;
+    private AvailableGames availableGames;
 
-    public InformationTable(Rating rating, GameInfo gameInfo, AvailableGames availableGames) {
-        this.rating = rating;
-        this.gameInfo = gameInfo;
-        this.availableGames = availableGames;
+
+    public InformationTable() {
+        rating = new Rating();
+        availableGames = new AvailableGames();
     }
-
 
     public Rating getRating() {
         return rating;
     }
 
-    public GameInfo getGameInfo() {
-        return gameInfo;
+    public void setRating(Rating rating) {
+        this.rating = rating;
+    }
+
+    public void setGameConfig(GameConfig gameConfig) {
+        this.gameConfig = gameConfig;
+    }
+
+    public void setAvailableGames(AvailableGames availableGames) {
+        this.availableGames = availableGames;
+    }
+
+    public GameConfig getGameConfig() {
+        return gameConfig;
     }
 
     public AvailableGames getAvailableGames() {
         return availableGames;
     }
+
+//    public static String composeRatingString(User user) {
+//        return String.format("",
+//                user.getSnakeNumber(),
+//                user.getSnakeNumber());
+//    }
 }

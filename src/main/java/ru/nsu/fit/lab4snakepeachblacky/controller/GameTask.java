@@ -1,10 +1,11 @@
 package ru.nsu.fit.lab4snakepeachblacky.controller;
 
 import javafx.scene.canvas.GraphicsContext;
+import ru.nsu.fit.lab4snakepeachblacky.model.Constants;
 import ru.nsu.fit.lab4snakepeachblacky.model.gameplay.Grid;
 import ru.nsu.fit.lab4snakepeachblacky.view.GridPainter;
 
-public class GameThread implements Runnable {
+public class GameTask implements Runnable {
     private final Grid grid;
     private final GraphicsContext context;
     private int frameRate;
@@ -13,11 +14,10 @@ public class GameThread implements Runnable {
     private boolean paused;
     private boolean keyIsPressed;
 
-    public GameThread(final Grid grid, final GraphicsContext context) {
+    public GameTask(final Grid grid, final GraphicsContext context) {
         this.grid = grid;
         this.context = context;
-        frameRate = 20;
-        interval = 1000.0f / frameRate; // 1000 ms in a second
+        interval = Constants.STATE_DELAY_MS;
         running = true;
         paused = false;
         keyIsPressed = false;
@@ -25,7 +25,7 @@ public class GameThread implements Runnable {
 
     @Override
     public void run() {
-        while (running && !paused) {
+        while (running) {
             // Time the update and paint calls
             float time = System.currentTimeMillis();
 
@@ -34,7 +34,7 @@ public class GameThread implements Runnable {
             GridPainter.paint(grid, context);
 
             if (!grid.getSnakes().get(0).isAlive()) {
-                pause();
+                stop();
                 GridPainter.paintResetMessage(context);
                 break;
             }
@@ -71,8 +71,8 @@ public class GameThread implements Runnable {
         paused = true;
     }
 
-    public boolean isPaused() {
-        return paused;
+    public boolean isRunning() {
+        return running;
     }
 
     public int getFrameRate() {
