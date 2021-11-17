@@ -2,16 +2,16 @@ package ru.nsu.fit.lab4snakepeachblacky.model.gameplay;
 
 import javafx.scene.paint.Color;
 import lombok.Getter;
-import ru.nsu.fit.lab4snakepeachblacky.model.gameplay.Cell;
-import ru.nsu.fit.lab4snakepeachblacky.model.gameplay.Grid;
+import ru.nsu.fit.lab4snakepeachblacky.proto.SnakesProto;
 
 import java.util.LinkedList;
 import java.util.List;
 
 public class Snake {
-    public static final Color COLOR = Color.CORNSILK;
+    public Color color = Color.CORNSILK;
     public static final Color DEAD_CELL = Color.RED;
 
+    private SnakesProto.GamePlayer owner;
     private Grid grid;
     private int length;
     @Getter
@@ -30,7 +30,11 @@ public class Snake {
         return head;
     }
 
-    public Snake(Grid grid, Cell initialPoint) {
+    public Snake(SnakesProto.GamePlayer owner, Grid grid, Cell initialPoint) {
+        this.owner = owner;
+//        if(owner.getRole() == ) {
+//            color = Color.YELLOW;
+//        }
         length = 1;
         cells = new LinkedList<>();
         cells.add(initialPoint);

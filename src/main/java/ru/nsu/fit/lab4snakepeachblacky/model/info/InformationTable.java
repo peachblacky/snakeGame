@@ -1,10 +1,11 @@
 package ru.nsu.fit.lab4snakepeachblacky.model.info;
 
-import ru.nsu.fit.lab4snakepeachblacky.model.GameConfig;
+import ru.nsu.fit.lab4snakepeachblacky.proto.SnakesProto;
 
 public class InformationTable {
     private Rating rating;
-    private GameConfig gameConfig;
+    private SnakesProto.GameConfig curGameConfig;
+    private SnakesProto.GamePlayers curGamePlayers;
     private AvailableGames availableGames;
 
 
@@ -21,22 +22,21 @@ public class InformationTable {
         this.rating = rating;
     }
 
-    public void setGameConfig(GameConfig gameConfig) {
-        this.gameConfig = gameConfig;
+    public void setCurGameConfig(SnakesProto.GameConfig curGameConfig) {
+        this.curGameConfig = curGameConfig;
     }
 
-    public void setAvailableGames(AvailableGames availableGames) {
-        this.availableGames = availableGames;
-    }
-
-    public GameConfig getGameConfig() {
-        return gameConfig;
+    public SnakesProto.GameConfig getCurGameConfig() {
+        return curGameConfig;
     }
 
     public AvailableGames getAvailableGames() {
         return availableGames;
     }
 
+    public SnakesProto.GamePlayers getCurGamePlayers() {
+        return curGamePlayers;
+    }
 //    public static String composeRatingString(User user) {
 //        return String.format("",
 //                user.getSnakeNumber(),

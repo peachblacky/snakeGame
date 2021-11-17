@@ -1,0 +1,51 @@
+package ru.nsu.fit.lab4snakepeachblacky.controller;
+
+import ru.nsu.fit.lab4snakepeachblacky.model.Constants;
+import ru.nsu.fit.lab4snakepeachblacky.proto.SnakesProto;
+
+import java.io.IOException;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.MulticastSocket;
+
+public class AnnounceHandler {
+    private Integer globalMsgSeq;
+    private final MulticastSocket mcSocket;
+    private final InetAddress group;
+    public AnnounceHandler() throws IOException {
+        mcSocket = new MulticastSocket(9192);
+        group = InetAddress.getByName("239.192.0.4");
+        mcSocket.joinGroup(group);
+        globalMsgSeq = 0;
+    }
+
+    public void sendAnnounceMsg() {
+        try {
+            var msg = SnakesProto.GameMessage.newBuilder()
+                    .setAnnouncement(SnakesProto.GameMessage.AnnouncementMsg.getDefaultInstance())
+                    .setMsgSeq(globalMsgSeq)
+                    .build();
+            var dataToSend = msg.toByteArray();
+            mcSocket.send(new DatagramPacket(dataToSend, dataToSend.length, group, Constants.MULTI_PORT));
+            globalMsgSeq += 1;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public SnakesProto.GameMessage receiveAnnounce() {
+        try {
+            byte[] receivingBuffer = new byte[8192];
+            DatagramPacket recvPacket = new DatagramPacket(receivingBuffer, receivingBuffer.length);
+            mcSocket.receive(recvPacket);
+            byte[] receivedBytes = new byte[recvPacket.getLength()];
+            System.arraycopy(receivingBuffer, 0, receivedBytes, 0, recvPacket.getLength());
+            SnakesProto.GameMessage recvedMsg = SnakesProto.GameMessage.parseFrom(receivedBytes);
+            return recvedMsg;
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return null;
+    }
+}

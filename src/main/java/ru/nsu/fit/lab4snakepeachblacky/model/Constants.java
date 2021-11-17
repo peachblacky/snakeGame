@@ -3,6 +3,7 @@ package ru.nsu.fit.lab4snakepeachblacky.model;
 public class Constants {
     public static final int FULL_WIDTH = 900;
     public static final int FULL_HEIGHT = 600;
+    public static final String CUR_USER_NAME = "Rostik";
 
 
 
@@ -26,4 +27,10 @@ public class Constants {
     public static final int RATING_HEIGHT = 200;
     public static final int AV_GAMES_WIDTH = FULL_WIDTH / 2 - 20;
     public static final int AV_GAMES_HEIGHT = 355;
+
+    //NET constants
+    public static final int UNI_PORT = 1488;
+    public static final int MULTI_PORT = 9192;
+    public static final long ANN_DELAY_MS = 1000;
+
 }

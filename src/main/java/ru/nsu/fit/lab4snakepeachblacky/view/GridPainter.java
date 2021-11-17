@@ -39,7 +39,7 @@ public class GridPainter {
     private static void paintSnake(Grid grid, GraphicsContext gc) {
 //        Snake snake = grid.getSnakes().get(0);
         grid.getSnakes().forEach(snake -> {
-            gc.setFill(Snake.COLOR);
+            gc.setFill(snake.color);
             snake.getCells().forEach(point -> paintPoint(point, gc));
             if (!snake.isAlive()) {
                 gc.setFill(Snake.DEAD_CELL);
