@@ -13,9 +13,9 @@ public class NetHandler {
 
     private Integer globalMsgSeq;
 //    private PlayerRole playerRole;
-    private final MulticastSocket mcSocket;
+//    private final MulticastSocket mcSocket;
     private final DatagramSocket ucSocket;
-    private final InetAddress group;
+//    private final InetAddress group;
 //    private final InetSocketAddress mcGroupAddr;
 //    private final DatagramChannel dc;
 //    private final MembershipKey mcKey;
@@ -23,9 +23,9 @@ public class NetHandler {
     public NetHandler() throws IOException {
         globalMsgSeq = 0;
         ucSocket = new DatagramSocket(Constants.UNI_PORT);
-        mcSocket = new MulticastSocket(9192);
-        group = InetAddress.getByName("239.192.0.4");
-        mcSocket.joinGroup(group);
+//        mcSocket = new MulticastSocket(9192);
+//        group = InetAddress.getByName("239.192.0.4");
+//        mcSocket.joinGroup(group);
     }
 
 

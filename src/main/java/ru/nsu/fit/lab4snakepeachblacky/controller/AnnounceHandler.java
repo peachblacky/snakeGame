@@ -20,10 +20,12 @@ public class AnnounceHandler {
         globalMsgSeq = 0;
     }
 
-    public void sendAnnounceMsg() {
+    public void sendAnnounceMsg(SnakesProto.GamePlayers players, SnakesProto.GameConfig config) {
         try {
             var msg = SnakesProto.GameMessage.newBuilder()
-                    .setAnnouncement(SnakesProto.GameMessage.AnnouncementMsg.getDefaultInstance())
+                    .setAnnouncement(SnakesProto.GameMessage.AnnouncementMsg.newBuilder()
+                            .setPlayers(players)
+                            .setConfig(config).build())
                     .setMsgSeq(globalMsgSeq)
                     .build();
             var dataToSend = msg.toByteArray();

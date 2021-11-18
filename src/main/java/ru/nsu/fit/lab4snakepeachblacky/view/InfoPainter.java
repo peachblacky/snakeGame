@@ -1,31 +1,53 @@
 package ru.nsu.fit.lab4snakepeachblacky.view;
 
+import javafx.application.Platform;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TableView;
+import javafx.scene.layout.AnchorPane;
+import ru.nsu.fit.lab4snakepeachblacky.model.Constants;
 import ru.nsu.fit.lab4snakepeachblacky.model.info.InformationTable;
 import ru.nsu.fit.lab4snakepeachblacky.proto.SnakesProto;
 
 
 public class InfoPainter {
-    private TableView<SnakesProto.GameConfig> avGameTable;
-    private ListView<String> curGameInfo;
-    private ListView<String> rating;
 
+//    public static void paint(SnakesProto.GameState state, ListView<String> rating, ListView<String> gameInfo) {
+//        paintRating(state, rating);
+//    }
 
-    public static void paint(InformationTable infoTable, GraphicsContext gc) {
-
+    public static void paintRating(SnakesProto.GameState state, ListView<String> rating) {
+        Platform.runLater(
+                () -> {
+                    rating.getItems().clear();
+                    state.getPlayers().getPlayersList().forEach(pl ->
+                            rating.getItems().add(pl.getId() + ". " + pl.getName() + " " + pl.getScore()));
+                }
+        );
+//        rating.getItems().clear();
     }
 
-    public void setAvGameTable(TableView<SnakesProto.GameConfig> avGameTable) {
-        this.avGameTable = avGameTable;
+    public static void paintGameInfo(SnakesProto.GameState state, ListView<String> gameInfo) {
+        Platform.runLater(
+                () -> {
+                    gameInfo.getItems().clear();
+                    state.getPlayers().getPlayersList().forEach(pl ->
+                            gameInfo.getItems().add(pl.getId() + ". " + pl.getName() + " " + pl.getScore()));
+                }
+        );
     }
 
-    public void setCurGameInfo(ListView<String> curGameInfo) {
-        this.curGameInfo = curGameInfo;
-    }
-
-    public void setRating(ListView<String> rating) {
-        this.rating = rating;
+    public static void paintAvGameTable(SnakesProto.GameMessage msg, TableView<SnakesProto.GameConfig> avGametable) {
+        if(!msg.hasAnnouncement()) {
+            throw new IllegalArgumentException("msg is not announce");
+        }
+        var newGameConfig = msg.getAnnouncement().getConfig();
+        Platform.runLater(
+                () -> {
+                    if(!avGametable.getItems().contains(newGameConfig)) {
+                        avGametable.getItems().add(newGameConfig);
+                    }
+                }
+        );
     }
 }

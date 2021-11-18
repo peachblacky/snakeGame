@@ -1,9 +1,11 @@
 package ru.nsu.fit.lab4snakepeachblacky.model;
 
+import javafx.scene.paint.Color;
+
 public class Constants {
     public static final int FULL_WIDTH = 900;
     public static final int FULL_HEIGHT = 600;
-    public static final String CUR_USER_NAME = "Rostik";
+    public static final int MAX_GRID_WIDTH = FULL_WIDTH / 2;
 
 
 
@@ -33,4 +35,9 @@ public class Constants {
     public static final int MULTI_PORT = 9192;
     public static final long ANN_DELAY_MS = 1000;
 
+    //COLORS
+    public static final Color[] COLORS = {
+        Color.RED, Color.BROWN, Color.ORANGE, Color.BLUE,
+        Color.YELLOW, Color.BLUEVIOLET, Color.BURLYWOOD, Color.DARKORCHID
+    };
 }
