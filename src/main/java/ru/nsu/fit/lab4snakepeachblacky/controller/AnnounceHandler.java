@@ -43,8 +43,7 @@ public class AnnounceHandler {
             mcSocket.receive(recvPacket);
             byte[] receivedBytes = new byte[recvPacket.getLength()];
             System.arraycopy(receivingBuffer, 0, receivedBytes, 0, recvPacket.getLength());
-            SnakesProto.GameMessage recvedMsg = SnakesProto.GameMessage.parseFrom(receivedBytes);
-            return recvedMsg;
+            return SnakesProto.GameMessage.parseFrom(receivedBytes);
         } catch (IOException e) {
             e.printStackTrace();
         }

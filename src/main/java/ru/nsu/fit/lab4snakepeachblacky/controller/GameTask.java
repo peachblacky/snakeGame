@@ -9,12 +9,20 @@ import ru.nsu.fit.lab4snakepeachblacky.view.GridPainter;
 import ru.nsu.fit.lab4snakepeachblacky.view.InfoPainter;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.Random;
+import java.util.Timer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 public class GameTask implements Runnable {
+    Thread stateSendingThread;
     Thread masterThread;
+
     Thread normalOrDeputyThread;
     Thread announceThread;
     Thread pingThread;
@@ -29,21 +37,21 @@ public class GameTask implements Runnable {
 
     //    private InformationTable infoTable;
     private SnakesProto.NodeRole role;
+    private Integer id;
     private SnakesProto.GameState currentState;
+    Lock stateLock = new ReentrantLock();
+    Condition stateCond = stateLock.newCondition();
     private Integer stateOrder;
 
     //    private Grid grid;
     private final GraphicsContext context;
     private ListView<String> rating;
     private ListView<String> gameInfo;
+    Boolean isPaintTurn = true;
     private TableView<SnakesProto.GameConfig> avGameTable;
 
 
-    private int frameRate;
-    private final float interval;
-    private boolean running;
-    private boolean paused;
-    private boolean keyIsPressed;
+    private boolean hasDeputy;
     private AtomicInteger msgSeq;
 
     public GameTask(final GraphicsContext context) {
@@ -56,13 +64,10 @@ public class GameTask implements Runnable {
             e.printStackTrace();
         }
         this.context = context;
-        interval = Constants.STATE_DELAY_MS;
-        running = true;
-        paused = false;
-        keyIsPressed = false;
         role = SnakesProto.NodeRole.NORMAL;
         alive = new AtomicBoolean();
         msgSeq = new AtomicInteger(0);
+        hasDeputy = false;
 //        alive.set(false);
     }
 
@@ -70,34 +75,42 @@ public class GameTask implements Runnable {
     public void run() {
         alive.set(true);
         if (role.equals(SnakesProto.NodeRole.MASTER)) {
-            masterThread = new Thread(this::stateSendingRoutine);
+            stateSendingThread = new Thread(this::stateSendingRoutine);
+            stateSendingThread.start();
+            masterThread = new Thread(this::masterRoutine);
             masterThread.start();
         } else {
             normalOrDeputyThread = new Thread(this::normalOrDeputyNetRoutine);
-            pingThread = new Thread(this::pingRoutine);
             normalOrDeputyThread.start();
-            pingThread.start();
         }
+        pingThread = new Thread(this::pingRoutine);
+        pingThread.start();
         announceThread = new Thread(this::announceRoutine);
         announceThread.start();
 
         while (alive.get()) {
-            // Time the update and paint calls
-            float time = System.currentTimeMillis();
 
-            keyIsPressed = false;
 //            grid.update();
-            GridPainter.paint(currentState, context);
-            InfoPainter.paintRating(currentState, rating);
-
-            time = System.currentTimeMillis() - time;
-
-            // Adjust the timing correctly
-            if (time < interval) {
-                try {
-                    Thread.sleep((long) (interval - time));
-                } catch (InterruptedException ignore) {
+            stateLock.lock();
+            try {
+                while (!isPaintTurn) {
+                    stateCond.await();
                 }
+//                System.out.println("PAINT");
+                GridPainter.paint(currentState, context);
+                InfoPainter.paintRating(currentState, rating);
+                isPaintTurn = false;
+                stateCond.signalAll();
+            } catch (InterruptedException e) {
+                break;
+            } finally {
+                stateLock.unlock();
+            }
+
+            try {
+                Thread.sleep(currentState.getConfig().getStateDelayMs());
+            } catch (InterruptedException ignore) {
+                System.out.println("Interrupted main game thread");
             }
         }
     }
@@ -106,8 +119,137 @@ public class GameTask implements Runnable {
 
     }
 
+    private void masterRoutine() {
+//        Long time = 0L;
+        var time = new Object(){ long time = 0;};
+        Map<String, Long> playerTimeouts = new HashMap<>();
+        while (alive.get()) {
+            time.time = System.currentTimeMillis();
+            var msgWrap = uniReceiver.receiveUnicastMsg();
+            var msg = msgWrap.getMsg();
+            if(msg.hasJoin()) {
+                var stateB = SnakesProto.GameState.newBuilder(currentState);
+                SnakesProto.GamePlayer newPlayer = SnakesProto.GamePlayer.newBuilder()
+                        .setName(msg.getJoin().getName())
+                        .setId(stateB.getPlayers().getPlayersCount() + 1)
+                        .setIpAddress(msgWrap.getIp())
+                        .setPort(Constants.UNI_PORT)
+                        .setRole(SnakesProto.NodeRole.NORMAL)
+                        .setScore(0)
+                        .build();
+                SnakesProto.GamePlayers newPlayers = SnakesProto.GamePlayers.newBuilder(stateB.getPlayers())
+                        .addPlayers(newPlayer)
+                        .build();
+                stateB.setPlayers(newPlayers);
+                stateLock.lock();
+                currentState = stateB.build();
+                //ACK
+                uniSender.sendUnicastMsg(SnakesProto.GameMessage.newBuilder()
+                                .setMsgSeq(msgSeq.getAndIncrement())
+                                .setAck(SnakesProto.GameMessage.AckMsg.getDefaultInstance())
+                                .setReceiverId(currentState.getPlayers().getPlayersCount() + 1)
+                        .build(), msgWrap.getIp());
+                if(!hasDeputy) {
+                    chooseDeputy();
+                }
+                stateLock.unlock();
+                playerTimeouts.put(msgWrap.getIp(), 0L);
+            }
+            if(msg.hasPing()) {
+                if(playerTimeouts.containsKey(msgWrap.getIp())) {
+                    stateLock.lock();
+                    playerTimeouts.put(msgWrap.getIp(), 0L);
+                    stateLock.unlock();
+                }
+            }
+            if(msg.hasSteer()) {
+                if(playerTimeouts.containsKey(msgWrap.getIp())) {
+                    stateLock.lock();
+                    var mySnake = currentState.getSnakesList().stream()
+                            .filter(snake -> snake.getPlayerId() == msg.getSenderId())
+                            .findAny()
+                            .orElse(null);
+                    if (mySnake == null) {
+                        stateLock.unlock();
+                        return;
+                    }
+                    if (switch (mySnake.getHeadDirection()) {
+                        case UP -> msg.getSteer().getDirection() != SnakesProto.Direction.DOWN;
+                        case DOWN -> msg.getSteer().getDirection() != SnakesProto.Direction.UP;
+                        case LEFT -> msg.getSteer().getDirection() != SnakesProto.Direction.RIGHT;
+                        case RIGHT -> msg.getSteer().getDirection() != SnakesProto.Direction.LEFT;
+
+                    }) {
+                        var newState = currentState.toBuilder()
+                                .removeSnakes(currentState.getSnakesList().indexOf(mySnake));
+                        mySnake = mySnake.toBuilder().setHeadDirection(msg.getSteer().getDirection()).build();
+                        newState.addSnakes(mySnake);
+                        currentState = newState.build();
+                    }
+                    stateLock.unlock();
+                }
+            }
+            if(msg.hasAck()) {
+                //TODO if i realise that they will be sent to master at all
+            }
+            time.time = System.currentTimeMillis() - time.time;
+
+            playerTimeouts.entrySet().removeIf(entry -> {
+                entry.setValue(entry.getValue() + time.time);
+                stateLock.lock();
+                if(entry.getValue() > currentState.getConfig().getNodeTimeoutMs()) {
+                    deletePlayerByIp(entry.getKey());
+                    stateLock.unlock();
+                    return true;
+                }
+                stateLock.unlock();
+                return false;
+            });
+        }
+    }
+
+    //only master
+    private void deletePlayerByIp(String ip) {
+        var player = currentState.getPlayers().getPlayersList().stream()
+                .filter(pl -> pl.getIpAddress().equals(ip))
+                .findAny()
+                .orElse(null);
+        if(player == null) {
+            return;
+        }
+        var stateB = SnakesProto.GameState.newBuilder(currentState);
+        SnakesProto.GamePlayers newPlayers = SnakesProto.GamePlayers.newBuilder(stateB.getPlayers())
+                .removePlayers(stateB.getPlayers().getPlayersList().indexOf(player))
+                .build();
+        stateB.setPlayers(newPlayers);
+        currentState = stateB.build();
+        if(player.getRole() == SnakesProto.NodeRole.DEPUTY) {
+            chooseDeputy();
+        }
+    }
+
+    //only master
+    private void chooseDeputy() {
+        //TODO implement
+    }
+
     private void stateSendingRoutine() {
         while ((alive.get())) {
+            stateLock.lock();
+            try {
+                while (isPaintTurn) {
+                    stateCond.await();
+                }
+//                System.out.println("STATE");
+                updateState();
+                isPaintTurn = true;
+                stateCond.signalAll();
+            } catch (InterruptedException e) {
+                break;
+            } finally {
+                stateLock.unlock();
+            }
+//            System.out.println("State updated");
             SnakesProto.GameMessage newStateMsg = SnakesProto.GameMessage.newBuilder()
                     .setMsgSeq(msgSeq.getAndIncrement())
                     .setState(
@@ -158,9 +300,7 @@ public class GameTask implements Runnable {
         while (alive.get()) {
             currentState.getPlayers().getPlayersList().forEach(pl -> {
 //                uniSendLock.lock();
-                uniSender.sendUnicastMsg(SnakesProto
-                                .GameMessage
-                                .newBuilder()
+                uniSender.sendUnicastMsg(SnakesProto.GameMessage.newBuilder()
                                 .setMsgSeq(msgSeq.incrementAndGet())
                                 .setPing(SnakesProto.GameMessage.PingMsg.getDefaultInstance())
                                 .build(),
@@ -177,13 +317,34 @@ public class GameTask implements Runnable {
     }
 
     public void steerSnake(SnakesProto.Direction direction) {
+        stateLock.lock();
         if (role == SnakesProto.NodeRole.MASTER) {
             var mySnake = currentState.getSnakesList().stream()
                     .filter(snake -> snake.getPlayerId() == 1)
                     .findAny()
                     .orElse(null);
-            mySnake.toBuilder().setHeadDirection(direction);
+            if (mySnake == null) {
+                stateLock.unlock();
+                return;
+            }
+            if (switch (mySnake.getHeadDirection()) {
+                case UP -> direction != SnakesProto.Direction.DOWN;
+                case DOWN -> direction != SnakesProto.Direction.UP;
+                case LEFT -> direction != SnakesProto.Direction.RIGHT;
+                case RIGHT -> direction != SnakesProto.Direction.LEFT;
+
+            }) {
+                var newState = currentState.toBuilder()
+                        .removeSnakes(currentState.getSnakesList().indexOf(mySnake));
+                mySnake = mySnake.toBuilder().setHeadDirection(direction).build();
+                newState.addSnakes(mySnake);
+                currentState = newState.build();
+            }
         } else {
+            if (role == SnakesProto.NodeRole.VIEWER) {
+                stateLock.unlock();
+                return;
+            }
             var master = currentState.getPlayers().getPlayersList().stream()
                     .filter(pl -> pl.getRole() == SnakesProto.NodeRole.MASTER)
                     .findAny()
@@ -191,10 +352,146 @@ public class GameTask implements Runnable {
             if (master == null) {
                 throw new NullPointerException("Master is null");
             }
-            uniSender.sendUnicastMsg(SnakesProto.GameMessage.newBuilder().setSteer(
-                            SnakesProto.GameMessage.SteerMsg.newBuilder().setDirection(direction).build()).build(),
+            uniSender.sendUnicastMsg(SnakesProto.GameMessage.newBuilder()
+                            .setSteer(SnakesProto.GameMessage.SteerMsg.newBuilder().setDirection(direction).build())
+                            .setSenderId(id)
+                            .build(),
                     master.getIpAddress());
         }
+        stateLock.unlock();
+    }
+
+    //only for master
+    private void updateState() {
+        currentState.getSnakesList().forEach(snake -> {
+            var moveCoord = SnakesProto.GameState.Coord.newBuilder();
+            var headCoord = snake.getPointsList().get(0);
+            var newSnake = snake.toBuilder();
+            switch (snake.getHeadDirection()) {
+                case UP -> {
+                    newSnake.addPoints(0, normalizePoint(moveCoord.
+                            setX(headCoord.getX())
+                            .setY(headCoord.getY() - 1)
+                            .build())
+                    );
+                }
+                case DOWN -> {
+                    System.out.println("DOWN");
+                    newSnake.addPoints(0, normalizePoint(moveCoord.
+                            setX(headCoord.getX())
+                            .setY(headCoord.getY() + 1)
+                            .build())
+                    );
+                }
+                case LEFT -> {
+                    newSnake.addPoints(0, normalizePoint(moveCoord.
+                            setX(headCoord.getX() - 1)
+                            .setY(headCoord.getY())
+                            .build())
+                    );
+                }
+                case RIGHT -> {
+                    newSnake.addPoints(0, normalizePoint(moveCoord.
+                            setX(headCoord.getX() + 1)
+                            .setY(headCoord.getY())
+                            .build())
+                    );
+                }
+            }
+            //checking collisions
+            headCoord = newSnake.getPointsList().get(0);
+            System.out.println("Snake head " + headCoord.getX() + " " + headCoord.getY());
+            var stateB = currentState.toBuilder();
+            if (checkFoodCollide(headCoord)) {
+                plusScore(snake.getPlayerId());
+                var eatenFood = currentState.getFoodsList().indexOf(headCoord);
+                stateB.removeFoods(eatenFood);
+                placeFood(stateB);
+            } else if (checkSnakesCollide(headCoord)) {
+                makePlayerViewer(snake.getPlayerId());
+                stateB.removeSnakes(stateB.getSnakesList().indexOf(snake));
+                snake.getPointsList().forEach(point -> {
+                    if (Math.random() < Constants.DEAD_FOOD_GEN_PROB) {
+                        stateB.addFoods(point);
+                    }
+                });
+                currentState = stateB.build();
+                return;
+            } else {
+                newSnake.removePoints(newSnake.getPointsCount() - 1);
+            }
+            stateB.removeSnakes(stateB.getSnakesList().indexOf(snake));
+            stateB.addSnakes(newSnake);
+            currentState = stateB.build();
+        });
+    }
+
+    //only master
+    private void makePlayerViewer(int id) {
+        var stateB = SnakesProto.GameState.newBuilder(currentState);
+        var foundPlayer = currentState.getPlayers().getPlayersList().stream()
+                .filter(pl -> pl.getId() == id)
+                .findAny()
+                .orElse(null);
+        if (foundPlayer == null) {
+            return;
+        }
+        if (foundPlayer.getRole() == SnakesProto.NodeRole.MASTER) {
+            return;
+        }
+        stateB.setPlayers(SnakesProto.GamePlayers.newBuilder(stateB.getPlayers())
+                .removePlayers(stateB.getPlayers().getPlayersList().indexOf(foundPlayer))
+                .addPlayers(foundPlayer.toBuilder().setRole(SnakesProto.NodeRole.VIEWER).build())
+                .build());
+        currentState = stateB.build();
+        uniSender.sendUnicastMsg(SnakesProto.GameMessage.newBuilder()
+                .setMsgSeq(msgSeq.getAndIncrement())
+                .setRoleChange(
+                        SnakesProto.GameMessage.RoleChangeMsg.newBuilder()
+                                .setSenderRole(SnakesProto.NodeRole.MASTER)
+                                .setReceiverRole(SnakesProto.NodeRole.VIEWER)
+                                .build()
+                )
+                .build(), foundPlayer.getIpAddress());
+    }
+
+    //only master
+    private SnakesProto.GameState.Coord normalizePoint(SnakesProto.GameState.Coord point) {
+        var normalizedPoint = SnakesProto.GameState.Coord.newBuilder(point);
+        if (point.getX() == currentState.getConfig().getWidth()) {
+            normalizedPoint.setX(0);
+        } else if (point.getX() < 0) {
+            normalizedPoint.setX(currentState.getConfig().getWidth() - 1);
+        }
+        if (point.getY() == currentState.getConfig().getHeight()) {
+            normalizedPoint.setY(0);
+        } else if (point.getY() < 0) {
+            normalizedPoint.setY(currentState.getConfig().getHeight() - 1);
+        }
+        return normalizedPoint.build();
+    }
+
+    //only master
+    private void plusScore(int playerId) {
+//        var stateB = SnakesProto.GameState.newBuilder(currentState);
+        currentState.getPlayers().getPlayersList().forEach(pl -> {
+            if (pl.getId() == playerId) {
+                pl = pl.toBuilder().setScore(pl.getScore() + 1).build();
+            }
+        });
+//        currentState = stateB.build();
+        //TODO
+    }
+
+    //only master
+    private boolean checkFoodCollide(SnakesProto.GameState.Coord headCoord) {
+        return currentState.getFoodsList().contains(headCoord);
+    }
+
+    //only master
+    private boolean checkSnakesCollide(SnakesProto.GameState.Coord headCoord) {
+        return currentState.getSnakesList().stream()
+                .anyMatch(snake -> snake.getPointsList().contains(headCoord));
     }
 
     public void connectToGame() {
@@ -232,7 +529,9 @@ public class GameTask implements Runnable {
         newState.setConfig(newConfig);
 
         placeSnakes(newState);
-        placeFood(newState);
+        for (int i = 0; i < newConfig.getFoodStatic() + 1; i++) {
+            placeFood(newState);
+        }
 
         currentState = newState.build();
     }
@@ -256,16 +555,7 @@ public class GameTask implements Runnable {
     }
 
     private void placeFood(SnakesProto.GameState.Builder state) {
-        if (!state.hasConfig()) {
-            return;
-        }
-        var config = state.getConfig();
-        for (int ind = 0; ind < config.getFoodStatic(); ind++) {
-//            System.out.println("Placed");
-//            state.setFoods(ind, getRandomPoint(state));
-//            state.getFoodsList().add(getRandomPoint(state));
-            state.addFoods(getRandomPoint(state));
-        }
+        state.addFoods(getRandomPoint(state));
     }
 
     private SnakesProto.GameState.Coord getRandomPoint(SnakesProto.GameState.Builder state) {
@@ -297,46 +587,9 @@ public class GameTask implements Runnable {
         alive.set(false);
     }
 
-    public boolean isKeyPressed() {
-        return keyIsPressed;
-    }
-
-    public void setKeyPressed() {
-        keyIsPressed = true;
-    }
-
-    public void resume() {
-        paused = false;
-    }
-
-    public void pause() {
-        paused = true;
-    }
-
-    public boolean isRunning() {
-        return running;
-    }
-
-    public int getFrameRate() {
-        return frameRate;
-    }
-
-    public void setFrameRate(int frameRate) {
-        this.frameRate = frameRate;
-    }
-
     public SnakesProto.GameState getCurrentState() {
         return currentState;
     }
-
-    //    public InformationTable getInfoTable() {
-//        return infoTable;
-//    }
-//
-//    public void setInfoTable(InformationTable table) {
-//        this.infoTable = table;
-//    }
-
 
     public void setRating(ListView<String> rating) {
         this.rating = rating;

@@ -11,13 +11,14 @@ public class Constants {
 
     //TODO add GameConfig constants for new game starting
     //GameConfig
-    public static final int COLUMNS = 10;
-    public static final int ROWS = 10;
+    public static final int COLUMNS = 15;
+    public static final int ROWS = 15;
     public static final int FOOD_STATIC = 1;
     public static final int FOOD_DYNAMIC = 1;
     public static final int STATE_DELAY_MS = 100;
     public static final int PING_DELAY = 100;
     public static final int NODE_TIMEOUT_MS = 800;
+    public static final double DEAD_FOOD_GEN_PROB = 0.2;
 
     //playfield configuration
     public static final int CELL_SIZE = Math.min(FULL_WIDTH / COLUMNS / 2, FULL_HEIGHT / ROWS);
