@@ -9,7 +9,6 @@ public class Constants {
 
 
 
-    //TODO add GameConfig constants for new game starting
     //GameConfig
     public static final int COLUMNS = 15;
     public static final int ROWS = 15;

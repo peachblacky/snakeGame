@@ -230,7 +230,23 @@ public class GameTask implements Runnable {
 
     //only master
     private void chooseDeputy() {
-        //TODO implement
+        var players = currentState.getPlayers();
+        var newDeputy = players.getPlayersList().stream()
+                .filter(pl -> pl.getRole() == SnakesProto.NodeRole.NORMAL)
+                .findAny()
+                .orElse(null);
+        if(newDeputy == null) {
+            alive.set(false);
+            return;
+        }
+        var stateB = SnakesProto.GameState.newBuilder(currentState);
+        stateB.setPlayers(
+                players.toBuilder()
+                        .removePlayers(players.getPlayersList().indexOf(newDeputy))
+                        .addPlayers(newDeputy.toBuilder().setRole(SnakesProto.NodeRole.DEPUTY).build())
+                        .build()
+        );
+        currentState = stateB.build();
     }
 
     private void stateSendingRoutine() {
@@ -495,7 +511,7 @@ public class GameTask implements Runnable {
     }
 
     public void connectToGame() {
-        //TODO send JOIN message to MASTER and wat for reply
+        //TODO send JOIN message to MASTER and wait for reply
     }
 
     public void startNewGame() {
