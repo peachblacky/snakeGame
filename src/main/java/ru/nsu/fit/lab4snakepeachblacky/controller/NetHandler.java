@@ -27,9 +27,6 @@ public class NetHandler {
         }
     }
 
-//    private synchronized SnakesProto.GameMessage receiveUnicastMag() {
-//        return getGameMessage(uniSocket);
-//    }
 
     public synchronized MsgWrap receiveUnicastMsg() {
         try {

@@ -12,7 +12,6 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Random;
-import java.util.Timer;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Condition;
@@ -48,7 +47,7 @@ public class GameTask implements Runnable {
     private ListView<String> rating;
     private ListView<String> gameInfo;
     Boolean isPaintTurn = true;
-    private TableView<SnakesProto.GameConfig> avGameTable;
+    private TableView<SnakesProto.GameMessage.AnnouncementMsg> avGameTable;
 
 
     private boolean hasDeputy;
@@ -303,13 +302,24 @@ public class GameTask implements Runnable {
         while (alive.get()) {
             try {
                 SnakesProto.GameMessage msg = annReceiver.receiveAnnounce();
+                msg = setMasterIdAnnounce(msg.getAnnouncement());
                 InfoPainter.paintAvGameTable(msg, avGameTable);
-
                 Thread.sleep(Constants.ANN_DELAY_MS);
             } catch (InterruptedException ignore) {
                 break;
             }
         }
+    }
+
+    private SnakesProto.GameMessage setMasterIdAnnounce(SnakesProto.GameMessage.AnnouncementMsg msg) {
+        var master = msg.getPlayers().getPlayersList().stream()
+                .filter(pl -> pl.getRole().equals(SnakesProto.NodeRole.MASTER))
+                .findAny()
+                .orElse(null);
+        if(master == null) {
+            throw new NullPointerException("Master of entered game is null");
+        }
+        //TODO
     }
 
     private void pingRoutine() {
@@ -510,7 +520,24 @@ public class GameTask implements Runnable {
                 .anyMatch(snake -> snake.getPointsList().contains(headCoord));
     }
 
-    public void connectToGame() {
+    public void enterGame(SnakesProto.GameMessage.AnnouncementMsg msg) {
+        var master = msg.getPlayers().getPlayersList().stream()
+                .filter(pl -> pl.getRole().equals(SnakesProto.NodeRole.MASTER))
+                .findAny()
+                .orElse(null);
+        if(master == null) {
+            throw new NullPointerException("Master of entered game is null");
+        }
+        uniSender.sendUnicastMsg(
+                SnakesProto.GameMessage.newBuilder()
+                        .setJoin(
+                                SnakesProto.GameMessage.JoinMsg.newBuilder()
+                                        .setName("Rostislavus")
+                                        .build()
+                        )
+                        .build(),
+                master.getIpAddress()
+        );
         //TODO send JOIN message to MASTER and wait for reply
     }
 
@@ -561,11 +588,7 @@ public class GameTask implements Runnable {
                     .setPlayerId(player.getId())
                     .setState(SnakesProto.GameState.Snake.SnakeState.ALIVE)
                     .setHeadDirection(SnakesProto.Direction.DOWN);
-//            newSnake.setPoints(newSnake.getPointsCount(), getRandomPoint(state));
-//            newSnake.getPointsList().add(getRandomPoint(state));
             newSnake.addPoints(getRandomPoint(state));
-            //snake stays still until owner sends STEER_MSG
-//            state.getSnakesList().add(newSnake.build());
             state.addSnakes(newSnake.build());
         });
     }
@@ -595,9 +618,6 @@ public class GameTask implements Runnable {
         return resultCord;
     }
 
-    public void setMode(SnakesProto.NodeRole newRole) {
-        role = newRole;
-    }
 
     public void stop() {
         alive.set(false);
@@ -615,7 +635,7 @@ public class GameTask implements Runnable {
         this.gameInfo = gameInfo;
     }
 
-    public void setAvGameTable(TableView<SnakesProto.GameConfig> avGameTable) {
+    public void setAvGameTable(TableView<SnakesProto.GameMessage.AnnouncementMsg> avGameTable) {
         this.avGameTable = avGameTable;
     }
 }

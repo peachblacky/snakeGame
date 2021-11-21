@@ -37,16 +37,16 @@ public class InfoPainter {
         );
     }
 
-    public static void paintAvGameTable(SnakesProto.GameMessage msg, TableView<SnakesProto.GameConfig> avGametable) {
-        if(!msg.hasAnnouncement()) {
+    public static void paintAvGameTable(SnakesProto.GameMessage msg, TableView<SnakesProto.GameMessage.AnnouncementMsg> avGametable) {
+        if (!msg.hasAnnouncement()) {
             throw new IllegalArgumentException("msg is not announce");
         }
-        var newGameConfig = msg.getAnnouncement().getConfig();
+        var newGameConfig = msg.getAnnouncement();
         Platform.runLater(
                 () -> {
-                    if(!avGametable.getItems().contains(newGameConfig)) {
-                        avGametable.getItems().add(newGameConfig);
-                    }
+//                    if(!avGametable.getItems().contains(newGameConfig)) {
+                    avGametable.getItems().add(newGameConfig);
+//                    }
                 }
         );
     }
