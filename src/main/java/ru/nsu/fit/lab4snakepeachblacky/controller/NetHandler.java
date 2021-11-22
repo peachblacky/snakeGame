@@ -16,6 +16,10 @@ public class NetHandler {
         uniSocket = new DatagramSocket(Constants.UNI_PORT);
     }
 
+    public NetHandler(int port) throws IOException {
+        uniSocket = new DatagramSocket(port);
+    }
+
 
     public synchronized void sendUnicastMsg(SnakesProto.GameMessage msg, String receiverId) {
         try {

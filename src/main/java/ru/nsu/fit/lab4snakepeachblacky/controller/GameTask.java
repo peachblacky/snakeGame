@@ -4,6 +4,7 @@ import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TableView;
 import ru.nsu.fit.lab4snakepeachblacky.model.Constants;
+import ru.nsu.fit.lab4snakepeachblacky.model.net.MsgWrap;
 import ru.nsu.fit.lab4snakepeachblacky.proto.SnakesProto;
 import ru.nsu.fit.lab4snakepeachblacky.view.GridPainter;
 import ru.nsu.fit.lab4snakepeachblacky.view.InfoPainter;
@@ -28,21 +29,16 @@ public class GameTask implements Runnable {
 
     AtomicBoolean alive;
     private NetHandler uniSender;
-    //    private Lock uniSendLock;
     private NetHandler uniReceiver;
     private AnnounceHandler annSender;
     private AnnounceHandler annReceiver;
 
 
-    //    private InformationTable infoTable;
     private SnakesProto.NodeRole role;
-    private Integer id;
     private SnakesProto.GameState currentState;
     Lock stateLock = new ReentrantLock();
     Condition stateCond = stateLock.newCondition();
-    private Integer stateOrder;
 
-    //    private Grid grid;
     private final GraphicsContext context;
     private ListView<String> rating;
     private ListView<String> gameInfo;
@@ -51,12 +47,12 @@ public class GameTask implements Runnable {
 
 
     private boolean hasDeputy;
-    private AtomicInteger msgSeq;
+    private final AtomicInteger msgSeq;
 
     public GameTask(final GraphicsContext context) {
         try {
-            this.uniSender = new NetHandler();
-            this.uniReceiver = uniSender;
+            this.uniSender = new NetHandler(1337);
+            this.uniReceiver = new NetHandler();
             this.annSender = new AnnounceHandler();
             this.annReceiver = annSender;
         } catch (IOException e) {
@@ -67,7 +63,6 @@ public class GameTask implements Runnable {
         alive = new AtomicBoolean();
         msgSeq = new AtomicInteger(0);
         hasDeputy = false;
-//        alive.set(false);
     }
 
     @Override
@@ -88,19 +83,18 @@ public class GameTask implements Runnable {
         announceThread.start();
 
         while (alive.get()) {
-
-//            grid.update();
             stateLock.lock();
             try {
                 while (!isPaintTurn) {
                     stateCond.await();
                 }
-//                System.out.println("PAINT");
                 GridPainter.paint(currentState, context);
                 InfoPainter.paintRating(currentState, rating);
+                InfoPainter.paintGameInfo(currentState, gameInfo);
                 isPaintTurn = false;
                 stateCond.signalAll();
             } catch (InterruptedException e) {
+                stateLock.unlock();
                 break;
             } finally {
                 stateLock.unlock();
@@ -109,18 +103,66 @@ public class GameTask implements Runnable {
             try {
                 Thread.sleep(currentState.getConfig().getStateDelayMs());
             } catch (InterruptedException ignore) {
-                System.out.println("Interrupted main game thread");
+                break;
             }
         }
     }
 
     private void normalOrDeputyNetRoutine() {
+        var time = new Object() {
+            long time = 0;
+        };
+        Map<String, Long> playerTimeouts = new HashMap<>();
+        while (alive.get()) {
+            time.time = System.currentTimeMillis();
+            var msgWrap = uniReceiver.receiveUnicastMsg();
+            var msg = msgWrap.getMsg();
+            if (msg.hasPing()) {
+                if (playerTimeouts.containsKey(msgWrap.getIp())) {
+                    stateLock.lock();
+                    playerTimeouts.put(msgWrap.getIp(), 0L);
+                    stateLock.unlock();
+                }
+            }
+            if (msg.hasRoleChange()) {
+                role = msg.getRoleChange().getReceiverRole();
+            }
+            if(msg.hasState()) {
+                stateLock.lock();
+                currentState = msg.getState().getState();
+                stateLock.unlock();
+            }
+            time.time = System.currentTimeMillis() - time.time;
 
+            playerTimeouts.entrySet().removeIf(entry -> {
+                entry.setValue(entry.getValue() + time.time);
+                stateLock.lock();
+                if (entry.getValue() > currentState.getConfig().getNodeTimeoutMs()) {
+                    var player = currentState.getPlayers().getPlayersList().stream()
+                            .filter(pl -> pl.getIpAddress().equals(entry.getKey()))
+                            .findAny()
+                            .orElse(null);
+                    if (player == null) {
+                        throw new NullPointerException();
+                    }
+                    if(player.getRole() == SnakesProto.NodeRole.MASTER) {
+                        if(role == SnakesProto.NodeRole.DEPUTY) {
+                            role = SnakesProto.NodeRole.MASTER;
+                            masterThread = new Thread(this::masterRoutine);
+                            masterThread.start();
+                        }
+                    }
+                }
+                stateLock.unlock();
+                return false;
+            });
+        }
     }
 
     private void masterRoutine() {
-//        Long time = 0L;
-        var time = new Object(){ long time = 0;};
+        var time = new Object() {
+            long time = 0;
+        };
         Map<String, Long> playerTimeouts = new HashMap<>();
         while (alive.get()) {
             time.time = System.currentTimeMillis();
@@ -144,9 +186,9 @@ public class GameTask implements Runnable {
                 currentState = stateB.build();
                 //ACK
                 uniSender.sendUnicastMsg(SnakesProto.GameMessage.newBuilder()
-                                .setMsgSeq(msgSeq.getAndIncrement())
-                                .setAck(SnakesProto.GameMessage.AckMsg.getDefaultInstance())
-                                .setReceiverId(currentState.getPlayers().getPlayersCount() + 1)
+                        .setMsgSeq(msgSeq.getAndIncrement())
+                        .setAck(SnakesProto.GameMessage.AckMsg.getDefaultInstance())
+                        .setReceiverId(currentState.getPlayers().getPlayersCount() + 1)
                         .build(), msgWrap.getIp());
                 if(!hasDeputy) {
                     chooseDeputy();
@@ -154,15 +196,15 @@ public class GameTask implements Runnable {
                 stateLock.unlock();
                 playerTimeouts.put(msgWrap.getIp(), 0L);
             }
-            if(msg.hasPing()) {
-                if(playerTimeouts.containsKey(msgWrap.getIp())) {
+            if (msg.hasPing()) {
+                if (playerTimeouts.containsKey(msgWrap.getIp())) {
                     stateLock.lock();
                     playerTimeouts.put(msgWrap.getIp(), 0L);
                     stateLock.unlock();
                 }
             }
-            if(msg.hasSteer()) {
-                if(playerTimeouts.containsKey(msgWrap.getIp())) {
+            if (msg.hasSteer()) {
+                if (playerTimeouts.containsKey(msgWrap.getIp())) {
                     stateLock.lock();
                     var mySnake = currentState.getSnakesList().stream()
                             .filter(snake -> snake.getPlayerId() == msg.getSenderId())
@@ -188,15 +230,12 @@ public class GameTask implements Runnable {
                     stateLock.unlock();
                 }
             }
-            if(msg.hasAck()) {
-                //TODO if i realise that they will be sent to master at all
-            }
             time.time = System.currentTimeMillis() - time.time;
 
             playerTimeouts.entrySet().removeIf(entry -> {
                 entry.setValue(entry.getValue() + time.time);
                 stateLock.lock();
-                if(entry.getValue() > currentState.getConfig().getNodeTimeoutMs()) {
+                if (entry.getValue() > currentState.getConfig().getNodeTimeoutMs()) {
                     deletePlayerByIp(entry.getKey());
                     stateLock.unlock();
                     return true;
@@ -213,7 +252,7 @@ public class GameTask implements Runnable {
                 .filter(pl -> pl.getIpAddress().equals(ip))
                 .findAny()
                 .orElse(null);
-        if(player == null) {
+        if (player == null) {
             return;
         }
         var stateB = SnakesProto.GameState.newBuilder(currentState);
@@ -222,7 +261,7 @@ public class GameTask implements Runnable {
                 .build();
         stateB.setPlayers(newPlayers);
         currentState = stateB.build();
-        if(player.getRole() == SnakesProto.NodeRole.DEPUTY) {
+        if (player.getRole() == SnakesProto.NodeRole.DEPUTY) {
             chooseDeputy();
         }
     }
@@ -234,7 +273,7 @@ public class GameTask implements Runnable {
                 .filter(pl -> pl.getRole() == SnakesProto.NodeRole.NORMAL)
                 .findAny()
                 .orElse(null);
-        if(newDeputy == null) {
+        if (newDeputy == null) {
             alive.set(false);
             return;
         }
@@ -246,6 +285,7 @@ public class GameTask implements Runnable {
                         .build()
         );
         currentState = stateB.build();
+        hasDeputy = true;
     }
 
     private void stateSendingRoutine() {
@@ -255,16 +295,15 @@ public class GameTask implements Runnable {
                 while (isPaintTurn) {
                     stateCond.await();
                 }
-//                System.out.println("STATE");
                 updateState();
                 isPaintTurn = true;
                 stateCond.signalAll();
             } catch (InterruptedException e) {
+                stateLock.unlock();
                 break;
             } finally {
                 stateLock.unlock();
             }
-//            System.out.println("State updated");
             SnakesProto.GameMessage newStateMsg = SnakesProto.GameMessage.newBuilder()
                     .setMsgSeq(msgSeq.getAndIncrement())
                     .setState(
@@ -301,9 +340,9 @@ public class GameTask implements Runnable {
     private void announceListeningRoutine() {
         while (alive.get()) {
             try {
-                SnakesProto.GameMessage msg = annReceiver.receiveAnnounce();
-                msg = setMasterIdAnnounce(msg.getAnnouncement());
-                InfoPainter.paintAvGameTable(msg, avGameTable);
+                var msg = annReceiver.receiveAnnounce();
+                var msgToPrint = setMasterIdAnnounce(msg);
+                InfoPainter.paintAvGameTable(msgToPrint, avGameTable);
                 Thread.sleep(Constants.ANN_DELAY_MS);
             } catch (InterruptedException ignore) {
                 break;
@@ -311,29 +350,39 @@ public class GameTask implements Runnable {
         }
     }
 
-    private SnakesProto.GameMessage setMasterIdAnnounce(SnakesProto.GameMessage.AnnouncementMsg msg) {
-        var master = msg.getPlayers().getPlayersList().stream()
+    private SnakesProto.GameMessage setMasterIdAnnounce(MsgWrap msg) {
+        var master = msg.getMsg().getAnnouncement().getPlayers().getPlayersList().stream()
                 .filter(pl -> pl.getRole().equals(SnakesProto.NodeRole.MASTER))
                 .findAny()
                 .orElse(null);
-        if(master == null) {
+        if (master == null) {
             throw new NullPointerException("Master of entered game is null");
         }
-        //TODO
+        var announcement = msg.getMsg().getAnnouncement();
+        return msg.getMsg().toBuilder()
+                .setAnnouncement(
+                        announcement.toBuilder()
+                                .setPlayers(
+                                        announcement.getPlayers().toBuilder()
+                                                .removePlayers(announcement.getPlayers().getPlayersList().indexOf(master))
+                                                .addPlayers(
+                                                        master.toBuilder().setIpAddress(msg.getIp()).build()
+                                                )
+                                                .build()
+                                )
+                                .build()
+                )
+                .build();
     }
 
     private void pingRoutine() {
         while (alive.get()) {
-            currentState.getPlayers().getPlayersList().forEach(pl -> {
-//                uniSendLock.lock();
-                uniSender.sendUnicastMsg(SnakesProto.GameMessage.newBuilder()
-                                .setMsgSeq(msgSeq.incrementAndGet())
-                                .setPing(SnakesProto.GameMessage.PingMsg.getDefaultInstance())
-                                .build(),
-                        pl.getIpAddress()
-                );
-//                uniSendLock.unlock();
-            });
+            currentState.getPlayers().getPlayersList().forEach(pl -> uniSender.sendUnicastMsg(SnakesProto.GameMessage.newBuilder()
+                            .setMsgSeq(msgSeq.incrementAndGet())
+                            .setPing(SnakesProto.GameMessage.PingMsg.getDefaultInstance())
+                            .build(),
+                    pl.getIpAddress()
+            ));
             try {
                 Thread.sleep(Constants.PING_DELAY);
             } catch (InterruptedException e) {
@@ -380,7 +429,6 @@ public class GameTask implements Runnable {
             }
             uniSender.sendUnicastMsg(SnakesProto.GameMessage.newBuilder()
                             .setSteer(SnakesProto.GameMessage.SteerMsg.newBuilder().setDirection(direction).build())
-                            .setSenderId(id)
                             .build(),
                     master.getIpAddress());
         }
@@ -394,42 +442,32 @@ public class GameTask implements Runnable {
             var headCoord = snake.getPointsList().get(0);
             var newSnake = snake.toBuilder();
             switch (snake.getHeadDirection()) {
-                case UP -> {
-                    newSnake.addPoints(0, normalizePoint(moveCoord.
-                            setX(headCoord.getX())
-                            .setY(headCoord.getY() - 1)
-                            .build())
-                    );
-                }
-                case DOWN -> {
-                    System.out.println("DOWN");
-                    newSnake.addPoints(0, normalizePoint(moveCoord.
-                            setX(headCoord.getX())
-                            .setY(headCoord.getY() + 1)
-                            .build())
-                    );
-                }
-                case LEFT -> {
-                    newSnake.addPoints(0, normalizePoint(moveCoord.
-                            setX(headCoord.getX() - 1)
-                            .setY(headCoord.getY())
-                            .build())
-                    );
-                }
-                case RIGHT -> {
-                    newSnake.addPoints(0, normalizePoint(moveCoord.
-                            setX(headCoord.getX() + 1)
-                            .setY(headCoord.getY())
-                            .build())
-                    );
-                }
+                case UP -> newSnake.addPoints(0, normalizePoint(moveCoord.
+                        setX(headCoord.getX())
+                        .setY(headCoord.getY() - 1)
+                        .build())
+                );
+                case DOWN -> newSnake.addPoints(0, normalizePoint(moveCoord.
+                        setX(headCoord.getX())
+                        .setY(headCoord.getY() + 1)
+                        .build())
+                );
+                case LEFT -> newSnake.addPoints(0, normalizePoint(moveCoord.
+                        setX(headCoord.getX() - 1)
+                        .setY(headCoord.getY())
+                        .build())
+                );
+                case RIGHT -> newSnake.addPoints(0, normalizePoint(moveCoord.
+                        setX(headCoord.getX() + 1)
+                        .setY(headCoord.getY())
+                        .build())
+                );
             }
             //checking collisions
             headCoord = newSnake.getPointsList().get(0);
-            System.out.println("Snake head " + headCoord.getX() + " " + headCoord.getY());
             var stateB = currentState.toBuilder();
             if (checkFoodCollide(headCoord)) {
-                plusScore(snake.getPlayerId());
+                plusScore(snake.getPlayerId(), stateB);
                 var eatenFood = currentState.getFoodsList().indexOf(headCoord);
                 stateB.removeFoods(eatenFood);
                 placeFood(stateB);
@@ -498,15 +536,18 @@ public class GameTask implements Runnable {
     }
 
     //only master
-    private void plusScore(int playerId) {
-//        var stateB = SnakesProto.GameState.newBuilder(currentState);
-        currentState.getPlayers().getPlayersList().forEach(pl -> {
-            if (pl.getId() == playerId) {
-                pl = pl.toBuilder().setScore(pl.getScore() + 1).build();
-            }
-        });
-//        currentState = stateB.build();
-        //TODO
+    private void plusScore(int id, SnakesProto.GameState.Builder state) {
+        var foundPlayer = currentState.getPlayers().getPlayersList().stream()
+                .filter(pl -> pl.getId() == id)
+                .findAny()
+                .orElse(null);
+        if (foundPlayer == null) {
+            return;
+        }
+        state.setPlayers(SnakesProto.GamePlayers.newBuilder(state.getPlayers())
+                .removePlayers(state.getPlayers().getPlayersList().indexOf(foundPlayer))
+                .addPlayers(foundPlayer.toBuilder().setScore(foundPlayer.getScore() + 1).build())
+                .build());
     }
 
     //only master
@@ -525,11 +566,12 @@ public class GameTask implements Runnable {
                 .filter(pl -> pl.getRole().equals(SnakesProto.NodeRole.MASTER))
                 .findAny()
                 .orElse(null);
-        if(master == null) {
+        if (master == null) {
             throw new NullPointerException("Master of entered game is null");
         }
         uniSender.sendUnicastMsg(
                 SnakesProto.GameMessage.newBuilder()
+                        .setMsgSeq(msgSeq.getAndIncrement())
                         .setJoin(
                                 SnakesProto.GameMessage.JoinMsg.newBuilder()
                                         .setName("Rostislavus")
@@ -538,11 +580,10 @@ public class GameTask implements Runnable {
                         .build(),
                 master.getIpAddress()
         );
-        //TODO send JOIN message to MASTER and wait for reply
     }
 
     public void startNewGame() {
-        stateOrder = 0;
+        int stateOrder = 0;
         role = SnakesProto.NodeRole.MASTER;
         var newState = SnakesProto.GameState.newBuilder()
                 .setStateOrder(stateOrder);
@@ -579,6 +620,7 @@ public class GameTask implements Runnable {
         currentState = newState.build();
     }
 
+    //only for game starting
     private void placeSnakes(SnakesProto.GameState.Builder state) {
         if (!state.hasPlayers()) {
             return;
@@ -593,6 +635,7 @@ public class GameTask implements Runnable {
         });
     }
 
+    //only for game starting
     private void placeFood(SnakesProto.GameState.Builder state) {
         state.addFoods(getRandomPoint(state));
     }
@@ -618,13 +661,8 @@ public class GameTask implements Runnable {
         return resultCord;
     }
 
-
     public void stop() {
         alive.set(false);
-    }
-
-    public SnakesProto.GameState getCurrentState() {
-        return currentState;
     }
 
     public void setRating(ListView<String> rating) {

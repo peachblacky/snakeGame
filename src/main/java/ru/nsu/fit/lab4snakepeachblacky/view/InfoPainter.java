@@ -1,20 +1,12 @@
 package ru.nsu.fit.lab4snakepeachblacky.view;
 
 import javafx.application.Platform;
-import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.control.ListView;
 import javafx.scene.control.TableView;
-import javafx.scene.layout.AnchorPane;
-import ru.nsu.fit.lab4snakepeachblacky.model.Constants;
-import ru.nsu.fit.lab4snakepeachblacky.model.info.InformationTable;
 import ru.nsu.fit.lab4snakepeachblacky.proto.SnakesProto;
 
 
 public class InfoPainter {
-
-//    public static void paint(SnakesProto.GameState state, ListView<String> rating, ListView<String> gameInfo) {
-//        paintRating(state, rating);
-//    }
 
     public static void paintRating(SnakesProto.GameState state, ListView<String> rating) {
         Platform.runLater(
@@ -24,15 +16,26 @@ public class InfoPainter {
                             rating.getItems().add(pl.getId() + ". " + pl.getName() + " " + pl.getScore()));
                 }
         );
-//        rating.getItems().clear();
     }
 
     public static void paintGameInfo(SnakesProto.GameState state, ListView<String> gameInfo) {
         Platform.runLater(
                 () -> {
+                    var master = state.getPlayers().getPlayersList().stream()
+                            .filter(pl -> pl.getRole().equals(SnakesProto.NodeRole.MASTER))
+                            .findAny()
+                            .orElse(null);
+                    if(master == null) {
+                        return;
+                    }
                     gameInfo.getItems().clear();
-                    state.getPlayers().getPlayersList().forEach(pl ->
-                            gameInfo.getItems().add(pl.getId() + ". " + pl.getName() + " " + pl.getScore()));
+                    gameInfo.getItems().add("Master: " + master.getName());
+                    gameInfo.getItems().add("Size: " + state.getConfig().getWidth()
+                            + "x"
+                            + state.getConfig().getHeight());
+                    gameInfo.getItems().add("Food: " + state.getConfig().getFoodStatic()
+                            + "+"
+                            + state.getConfig().getFoodPerPlayer() + "x");
                 }
         );
     }
@@ -41,12 +44,13 @@ public class InfoPainter {
         if (!msg.hasAnnouncement()) {
             throw new IllegalArgumentException("msg is not announce");
         }
-        var newGameConfig = msg.getAnnouncement();
+        var newAnnouncement = msg.getAnnouncement();
         Platform.runLater(
                 () -> {
-//                    if(!avGametable.getItems().contains(newGameConfig)) {
-                    avGametable.getItems().add(newGameConfig);
-//                    }
+                    avGametable.getItems().removeIf(
+                            ann -> ann.getConfig().equals(newAnnouncement.getConfig())
+                    );
+                    avGametable.getItems().add(newAnnouncement);
                 }
         );
     }

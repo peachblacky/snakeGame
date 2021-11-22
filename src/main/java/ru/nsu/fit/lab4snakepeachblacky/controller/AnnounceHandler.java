@@ -1,11 +1,11 @@
 package ru.nsu.fit.lab4snakepeachblacky.controller;
 
 import ru.nsu.fit.lab4snakepeachblacky.model.Constants;
+import ru.nsu.fit.lab4snakepeachblacky.model.net.MsgWrap;
 import ru.nsu.fit.lab4snakepeachblacky.proto.SnakesProto;
 
 import java.io.IOException;
 import java.net.DatagramPacket;
-import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.MulticastSocket;
 
@@ -36,14 +36,15 @@ public class AnnounceHandler {
         }
     }
 
-    public SnakesProto.GameMessage receiveAnnounce() {
+    public MsgWrap receiveAnnounce() {
         try {
             byte[] receivingBuffer = new byte[8192];
             DatagramPacket recvPacket = new DatagramPacket(receivingBuffer, receivingBuffer.length);
             mcSocket.receive(recvPacket);
             byte[] receivedBytes = new byte[recvPacket.getLength()];
             System.arraycopy(receivingBuffer, 0, receivedBytes, 0, recvPacket.getLength());
-            return SnakesProto.GameMessage.parseFrom(receivedBytes);
+            return new MsgWrap(recvPacket.getAddress().getHostAddress(),
+                    SnakesProto.GameMessage.parseFrom(receivedBytes));
         } catch (IOException e) {
             e.printStackTrace();
         }

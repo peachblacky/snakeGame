@@ -3,8 +3,8 @@ package ru.nsu.fit.lab4snakepeachblacky.model.net;
 import ru.nsu.fit.lab4snakepeachblacky.proto.SnakesProto;
 
 public class MsgWrap {
-    private String ip;
-    private SnakesProto.GameMessage msg;
+    private final String ip;
+    private final SnakesProto.GameMessage msg;
 
     public MsgWrap(String ip, SnakesProto.GameMessage msg) {
         this.ip = ip;
