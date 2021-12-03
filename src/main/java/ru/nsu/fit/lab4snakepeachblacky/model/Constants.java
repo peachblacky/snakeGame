@@ -14,7 +14,7 @@ public class Constants {
     public static final int ROWS = 15;
     public static final int FOOD_STATIC = 1;
     public static final int FOOD_DYNAMIC = 1;
-    public static final int STATE_DELAY_MS = 150;
+    public static final int STATE_DELAY_MS = 5;
     public static final int PING_DELAY = 100;
     public static final int NODE_TIMEOUT_MS = 800;
     public static final double DEAD_FOOD_GEN_PROB = 0.2;
